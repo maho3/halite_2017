@@ -1,0 +1,4 @@
+*.log
+*.hlt
+replays/
+hlt/__pycache__
