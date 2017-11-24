@@ -1,4 +1,6 @@
 *.log
 *.hlt
+*.pyc
+.ipynb_checkpoints
 replays/
 hlt/__pycache__

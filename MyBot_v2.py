@@ -3,7 +3,7 @@ import hlt
 import logging
 
 
-game = hlt.Game("Settler_v3")
+game = hlt.Game("Settler_v2")
 logging.info("Starting my Settler bot!")
 
 me = None
