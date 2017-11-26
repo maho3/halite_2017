@@ -4,7 +4,7 @@ import logging
 import time
 #import numpy as np
 
-game = hlt.Game("Settler_v6")
+game = hlt.Game("Settler_v5")
 logging.info("Starting my Settler bot!")
 
 # set constants
@@ -173,7 +173,7 @@ while True:
             if (planet.owner == me):
                 if planet.is_full():
                     continue
-                if (owned < lategame * len(planets)) and (len(my_ships) == 3): # expand fast in early game
+                if (owned < lategame * len(planets)) and (len(my_ships) > 3): # expand fast in early game
                     if len(my_planets) < (midgame*len(planets))/len(players):
                         continue
                         
@@ -283,7 +283,7 @@ while True:
                 if planet.is_full(): # if its full and i own it, ignore
                     continue
 
-                elif (owned < lategame * len(planets)) and (len(my_ships) == 3): # expand fast in early game
+                elif (owned < lategame * len(planets)) and (len(my_ships) > 3): # expand fast in early game
                     if len(my_planets) < (midgame*len(planets))/len(players):
                         continue 
                              
