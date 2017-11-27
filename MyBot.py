@@ -72,8 +72,23 @@ while True:
             if (ship.docking_status != ship.DockingStatus.UNDOCKED):
                 navigate_command = ship.undock()
             else:
+                if (ship.y <= 5) and (ship.x > 5):
+                    flee_pos = hlt.entity.Position(0,3)
+                elif (ship.x <= 5) and (ship.y < game_map.height - 5):
+                    flee_pos = hlt.entity.Position(3,game_map.height)
+                elif (ship.y >= game_map.height - 5) and (ship.x < game_map.width - 5):
+                    flee_pos = hlt.entity.Position(game_map.width, game_map.height - 3)
+                elif (ship.x >= game_map.width - 5) and (ship.y > 5):
+                    flee_pos = hlt.entity.Position(game_map.width - 3, 0)
+                else:
+                    flee_pos = min( hlt.entity.Position(ship.x, 0),
+                                    hlt.entity.Position(0, ship.y),
+                                    hlt.entity.Position(ship.x, game_map.height),
+                                    hlt.entity.Position(game_map.width, ship.y),
+                                    key = lambda p: ship.calculate_distance_between(p))
+                
                 navigate_command = ship.navigate(
-                    min(flee_pos, key=lambda p: ship.calculate_distance_between(p)),
+                    flee_pos,
                     game_map,
                     speed=int(hlt.constants.MAX_SPEED),
                     ignore_ships=False)
