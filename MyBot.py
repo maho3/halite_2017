@@ -2,7 +2,10 @@
 import hlt
 import logging
 import time
-#import numpy as np
+
+from matt import NodeMap, Nav, in_orbit, manage_commands
+
+import numpy as np
 
 game = hlt.Game("Settler_v6")
 logging.info("Starting my Settler bot!")
@@ -16,6 +19,12 @@ maxdef_perc = 0.5 # percentage of undocked ships for defenders per planet
 me = None
 
 
+nav = Nav(moverad = hlt.constants.MAX_SPEED, 
+          lookahead = 10.0, 
+          anginc = np.pi*2/180.
+         )
+
+
 """ 
  TODO: Only send (# of docks) + (# of enemies) to each planet, max
        Add navigation
@@ -25,13 +34,16 @@ me = None
         Attack new planets
  """
 
-def in_orbit(planet, ship):
-    return (planet.calculate_distance_between(ship) < (planet.radius + 2*hlt.constants.DOCK_RADIUS + hlt.constants.SHIP_RADIUS))
+ 
+ 
+first = True
 
 while True:
     # grab data and initialize
     game_map = game.update_map()
     command_queue = []
+    
+
     
     # grab useful information
     me = game_map.get_me()
@@ -42,9 +54,19 @@ while True:
     
     my_ships = me.all_ships()
     my_undocked_ships = [myship for myship in my_ships if (myship.docking_status == myship.DockingStatus.UNDOCKED)]
+    my_docked_ships = [myship for myship in my_ships if (myship.docking_status != myship.DockingStatus.UNDOCKED)]
     
     they_ships = [ship for they in game_map.all_players() if they!=me for ship in they.all_ships()]
     all_ships = my_ships + they_ships
+    
+    if first:
+        pmap = NodeMap(size = (game_map.width, game_map.height), spc = 0.25, shiprad = 1*hlt.constants.SHIP_RADIUS)
+        pmap.setObjects(planets)
+        
+        first = False
+    
+    smap = pmap.copy()
+    smap.setObjects(all_ships)
     
     maxRad = max(planet.radius for planet in planets)
     
@@ -70,7 +92,7 @@ while True:
         for ship in my_ships:
             navigate_command = None
             if (ship.docking_status != ship.DockingStatus.UNDOCKED):
-                navigate_command = ship.undock()
+                navigate_command = (ship,'UNDOCK')
             else:
                 if (ship.y <= 5) and (ship.x > 5):
                     flee_pos = hlt.entity.Position(0,3)
@@ -87,14 +109,12 @@ while True:
                                     hlt.entity.Position(game_map.width, ship.y),
                                     key = lambda p: ship.calculate_distance_between(p))
                 
-                navigate_command = ship.navigate(
-                    flee_pos,
-                    game_map,
-                    speed=int(hlt.constants.MAX_SPEED),
-                    ignore_ships=False)
+                navigate_command = (ship, flee_pos)
                 
             if navigate_command is not None:
                 command_queue.append(navigate_command)
+        
+        command_queue = manage_commands(command_queue, pmap, smap, nav)
                 
         game.send_command_queue(command_queue)
         continue
@@ -154,11 +174,7 @@ while True:
                     
                     shipd = min(shipd_free, key = lambda p: atms_them[planet.id][i].calculate_distance_between(p))
                 
-                navigate_command = shipd.navigate(
-                    shipd.closest_point_to(atms_them[planet.id][i]),
-                    game_map,
-                    speed=int(hlt.constants.MAX_SPEED),
-                    ignore_ships=len(my_planets) > len(planets)/float(len(players)))
+                navigate_command = (shipd, atms_them[planet.id][i])
                     
                 if navigate_command is not None:
                     command_queue.append(navigate_command)
@@ -188,42 +204,30 @@ while True:
             if (planet.owner == me):
                 if planet.is_full():
                     continue
-                if (owned < lategame * len(planets)) and (len(my_ships) == 3): # expand fast in early game
+                if (owned < lategame * len(planets)) and (len(my_ships) >= 3): # expand fast in early game
                     if len(my_planets) < (midgame*len(planets))/len(players):
                         continue
                         
                 if ship.can_dock(planet): # otherwise dock at my planets
-                    command_queue.append(ship.dock(planet))
+                    command_queue.append((ship,'DOCK',planet))
                     
                     assigned_to[planet.id] += 1
                     orbiters.append(ship.id)
-                    break                        
-            if len(all_ships) > 50: # ignore ships if danger of timing out
-                ignore_s = (orbit_me[planet.id] + orbit_them[planet.id]) > 10
-            else:
-                ignore_s = False
+                    break
                 
             if (not (planet.owner == me)):
                 if planet.is_owned(): # attack enemy docked ships 
                     near_dock = min(planet.all_docked_ships(),
                                         key= lambda dock: ship.calculate_distance_between(dock))
                     
-                    navigate_command = ship.navigate(
-                        ship.closest_point_to(near_dock),
-                        game_map,
-                        speed=int(hlt.constants.MAX_SPEED),
-                        ignore_ships=ignore_s)
+                    navigate_command = (ship,near_dock)
                 
                 elif ship.can_dock(planet): # if i can dock, steal it
                     
                     if atms_them[planet.id][0].can_dock(planet):
-                        navigate_command = ship.navigate(
-                            ship.closest_point_to(atms_them[planet.id][0]),
-                            game_map,
-                            speed=int(hlt.constants.MAX_SPEED),
-                            ignore_ships=True)
+                        navigate_command = (ship,atms_them[planet.id][0])
                     else:
-                        navigate_command = ship.dock(planet)
+                        navigate_command = (ship, 'DOCK', planet)
                         
                 if navigate_command is not None:
                     command_queue.append(navigate_command)
@@ -264,11 +268,7 @@ while True:
                     
                     ship_sup = supgen[i]
                         
-                    navigate_command = ship_sup.navigate(
-                        ship_sup.closest_point_to(planet),
-                        game_map,
-                        speed=int(hlt.constants.MAX_SPEED),
-                        ignore_ships=(len(me.all_ships())>100))
+                    navigate_command = (ship_sup,planet)
                         
                     if navigate_command is not None:
                         command_queue.append(navigate_command)
@@ -298,18 +298,14 @@ while True:
                 if planet.is_full(): # if its full and i own it, ignore
                     continue
 
-                elif (owned < lategame * len(planets)) and (len(my_ships) == 3): # expand fast in early game
+                elif (owned < lategame * len(planets)) and (len(my_ships) > 3): # expand fast in early game
                     if len(my_planets) < (midgame*len(planets))/len(players):
                         continue 
                              
             if navigate_command is None: # head to best heuristic planet
                 speed = hlt.constants.MAX_SPEED
                 
-                navigate_command = ship.navigate(
-                    ship.closest_point_to(planet),
-                    game_map,
-                    speed=int(speed),
-                    ignore_ships=(len(me.all_ships())>100) )
+                navigate_command = (ship,planet)
 
             if navigate_command is None:
                 continue
@@ -322,6 +318,8 @@ while True:
     
     logging.info("Times: defend " + str(defendt) + ' ; move ' + str(movet))
     logging.info(str(defenders) + ' ~~~ ' + str(orbiters) + ' ~~~ ' + str(supporters))
+    
+    command_queue = manage_commands(command_queue, pmap, smap, nav)
     
     game.send_command_queue(command_queue)
 
